@@ -1,58 +1,78 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-# Page configuration layout mapping
+# 1. Page Configuration (Sab se upar hona chahiye)
 st.set_page_config(page_title="Iris Classification Dashboard", layout="wide")
-
 st.title("🪻 Iris Species Classification Dashboard")
 st.write("Adjust the sliders below to dynamically predict the flower species.")
 
-# Load the dataset properly using Pandas from the local directory
-# Make sure 'iris.csv' is saved in the same folder as this script
+# 2. Dataset Ko Load Aur Standardize Karna
 try:
     df = pd.read_csv('iris.csv')
+    
+    # Column ke naamon ko automatic theek karna (Cm hatane ka fix)
+    rename_dict = {}
+    for col in df.columns:
+        if 'SepalLength' in col: rename_dict[col] = 'SepalLengthCm'
+        elif 'SepalWidth' in col: rename_dict[col] = 'SepalWidthCm'
+        elif 'PetalLength' in col: rename_dict[col] = 'PetalLengthCm'
+        elif 'PetalWidth' in col: rename_dict[col] = 'PetalWidthCm'
+        elif 'species' in col.lower(): rename_dict[col] = 'Species'
+    
+    df = df.rename(columns=rename_dict)
+    
 except FileNotFoundError:
-    st.error("Error: 'iris.csv' not found. Please place the CSV file in the same directory.")
+    st.error("❌ Error: 'iris.csv' nahi mili! Meharbani karke check karein ke CSV file isi same folder me ho.")
     st.stop()
 
-# Separate source features and target vector
+# Unnecessary 'Id' column drop karna agar majood ho
 X_raw = df.drop(columns=['Species'])
 if 'Id' in X_raw.columns:
-    X_raw = X_raw.drop(columns=['Id']) # Drop Id column if present
+    X_raw = X_raw.drop(columns=['Id'])
+
 y_target = df['Species']
 
-# Define numerical features explicitly
+# 3. Features Name Definition
 numerical_features = ['SepalLengthCm', 'SepalWidthCm', 'PetalLengthCm', 'PetalWidthCm']
 
-# Setup explicit Scikit-Learn Pipeline framework to match feature scaling layout
+# Pipeline Framework Setup
 preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', 'passthrough', numerical_features)
-    ]
+    transformers=[('num', 'passthrough', numerical_features)]
 )
 
 @st.cache_resource
 def train_production_classifier():
     model_pipeline = Pipeline(steps=[
         ('preprocessor', preprocessor),
-        ('regressor', RandomForestClassifier(n_estimators=100, random_state=42))
+        ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
     ])
     model_pipeline.fit(X_raw, y_target)
     return model_pipeline
 
-trained_pipeline = train_production_classifier()
+# Model train karna
+try:
+    trained_pipeline = train_production_classifier()
+except Exception as e:
+    st.error(f"❌ Model training me error aya: {e}")
+    st.stop()
 
-# Sidebar limits automatically sync from real pandas data min/max values
-st.sidebar.header("Flower Measurement Features")
-input_sepal_len = st.sidebar.slider("Sepal Length (cm)", float(df['SepalLengthCm'].min()), float(df['SepalLengthCm'].max()), float(df['SepalLengthCm'].mean()))
-input_sepal_wid = st.sidebar.slider("Sepal Width (cm)", float(df['SepalWidthCm'].min()), float(df['SepalWidthCm'].max()), float(df['SepalWidthCm'].mean()))
-input_petal_len = st.sidebar.slider("Petal Length (cm)", float(df['PetalLengthCm'].min()), float(df['PetalLengthCm'].max()), float(df['PetalLengthCm'].mean()))
-input_petal_wid = st.sidebar.slider("Petal Width (cm)", float(df['PetalWidthCm'].min()), float(df['PetalWidthCm'].max()), float(df['PetalWidthCm'].mean()))
+# 4. Main UI Screen Sliders Layout
+st.subheader("📋 Flower Measurement Features")
+col1, col2 = st.columns(2)
 
-# Structure user data payload matrix matching the raw features
+with col1:
+    input_sepal_len = st.slider("Sepal Length (cm)", float(df['SepalLengthCm'].min()), float(df['SepalLengthCm'].max()), float(df['SepalLengthCm'].mean()))
+    input_sepal_wid = st.slider("Sepal Width (cm)", float(df['SepalWidthCm'].min()), float(df['SepalWidthCm'].max()), float(df['SepalWidthCm'].mean()))
+
+with col2:
+    input_petal_len = st.slider("Petal Length (cm)", float(df['PetalLengthCm'].min()), float(df['PetalLengthCm'].max()), float(df['PetalLengthCm'].mean()))
+    input_petal_wid = st.slider("Petal Width (cm)", float(df['PetalWidthCm'].min()), float(df['PetalWidthCm'].max()), float(df['PetalWidthCm'].mean()))
+
+# Input Data Payload Matrix
 user_input_raw = pd.DataFrame([{
     'SepalLengthCm': input_sepal_len,
     'SepalWidthCm': input_sepal_wid,
@@ -60,11 +80,20 @@ user_input_raw = pd.DataFrame([{
     'PetalWidthCm': input_petal_wid
 }])
 
-# Compute prediction result upon interaction button click
-if st.sidebar.button("Predict Iris Species"):
-    predicted_specimen = trained_pipeline.predict(user_input_raw)
-    st.success(f"Outcome: The model classifies this flower as **{predicted_specimen[0]}**")
+# 5. Live Prediction Result Output
+try:
+    predicted_specimen = trained_pipeline.predict(user_input_raw)[0]
+    prediction_proba = trained_pipeline.predict_proba(user_input_raw)
+    max_proba = np.max(prediction_proba) * 100
 
+    st.write("---")
+    st.subheader("🎯 Prediction Result")
+    st.success(f"Outcome: The model classifies this flower as **{predicted_specimen}** (Confidence: {max_proba:.2f}%)")
+
+except Exception as e:
+    st.error(f"❌ Prediction karne me error aya: {e}")
+
+# 6. Complete Data Viewer Table
 st.write("---")
 st.subheader("📊 Complete Operational Dataset Workspace Viewer")
-st.dataframe(df)
+st.dataframe(df, use_container_width=True)
